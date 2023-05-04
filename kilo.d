@@ -756,23 +756,19 @@ void editorFind() {
 
 /*** append buffer ***/
 
-struct abuf {
-  char* b;
-  int len;
-}
+alias abuf = char[];
 
-void abAppend(abuf* ab, const(char)[] s) {
-  char* new_ = cast(char*) realloc(ab.b, ab.len + s.length);
+void abAppend(ref abuf ab, const(char)[] s) {
+  char* new_ = cast(char*) realloc(ab.ptr, ab.length + s.length);
 
   if (new_ == null)
     return;
-  memcpy(&new_[ab.len], s.ptr, s.length);
-  ab.b = new_;
-  ab.len += s.length;
+  memcpy(&new_[ab.length], s.ptr, s.length);
+  ab = new_[0 .. ab.length + s.length];
 }
 
-void abFree(abuf* ab) {
-  free(ab.b);
+void abFree(ref abuf ab) {
+  free(ab.ptr);
 }
 
 /*** output ***/
@@ -797,7 +793,7 @@ void editorScroll() {
   }
 }
 
-void editorDrawRows(abuf* ab) {
+void editorDrawRows(ref abuf ab) {
   foreach (y; 0 .. E.screenrows) {
     int filerow = y + E.rowoff;
     if (filerow >= E.numrows) {
@@ -867,7 +863,7 @@ void editorDrawRows(abuf* ab) {
   }
 }
 
-void editorDrawStatusBar(abuf* ab) {
+void editorDrawStatusBar(ref abuf ab) {
   abAppend(ab, "\x1b[7m");
   char[80] status, rstatus;
   int len = snprintf(status.ptr, status.length, "%.20s - %d lines %s",
@@ -892,7 +888,7 @@ void editorDrawStatusBar(abuf* ab) {
   abAppend(ab, "\r\n");
 }
 
-void editorDrawMessageBar(abuf* ab) {
+void editorDrawMessageBar(ref abuf ab) {
   abAppend(ab, "\x1b[K");
   size_t msglen = strlen(E.statusmsg.ptr);
   if (msglen > E.screencols)
@@ -906,22 +902,22 @@ void editorRefreshScreen() {
 
   abuf ab;
 
-  abAppend(&ab, "\x1b[?25l");
-  abAppend(&ab, "\x1b[H");
+  abAppend(ab, "\x1b[?25l");
+  abAppend(ab, "\x1b[H");
 
-  editorDrawRows(&ab);
-  editorDrawStatusBar(&ab);
-  editorDrawMessageBar(&ab);
+  editorDrawRows(ab);
+  editorDrawStatusBar(ab);
+  editorDrawMessageBar(ab);
 
   char[32] buf;
   int buflen = snprintf(buf.ptr, buf.length, "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
     (E.rx - E.coloff) + 1);
-  abAppend(&ab, buf[0 .. buflen]);
+  abAppend(ab, buf[0 .. buflen]);
 
-  abAppend(&ab, "\x1b[?25h");
+  abAppend(ab, "\x1b[?25h");
 
-  write(STDOUT_FILENO, ab.b, ab.len);
-  abFree(&ab);
+  write(STDOUT_FILENO, ab.ptr, ab.length);
+  abFree(ab);
 }
 
 void editorSetStatusMessage(Args...)(const(char)* fmt, Args args) {
