@@ -39,7 +39,7 @@ enum : int {
 }
 alias editorKey = int;
 
-enum : int {
+enum : ubyte {
   HL_NORMAL = 0,
   HL_COMMENT,
   HL_MLCOMMENT,
@@ -49,7 +49,7 @@ enum : int {
   HL_NUMBER,
   HL_MATCH
 }
-alias editorHighlight = int;
+alias editorHighlight = ubyte;
 
 enum HL_HIGHLIGHT_NUMBERS = (1 << 0);
 enum HL_HIGHLIGHT_STRINGS = (1 << 1);
@@ -118,11 +118,11 @@ static const editorSyntax[] HLDB = [
 
 /*** terminal ***/
 
-void die(const(char)* s) {
+void die(string s) {
   write(STDOUT_FILENO, "\x1b[2J".ptr, 4);
   write(STDOUT_FILENO, "\x1b[H".ptr, 3);
 
-  perror(s);
+  perror(s.ptr);
   exit(1);
 }
 
@@ -920,8 +920,8 @@ void editorRefreshScreen() {
   abFree(ab);
 }
 
-void editorSetStatusMessage(Args...)(const(char)* fmt, Args args) {
-  snprintf(E.statusmsg.ptr, E.statusmsg.length, fmt, args);
+void editorSetStatusMessage(Args...)(string fmt, Args args) {
+  snprintf(E.statusmsg.ptr, E.statusmsg.length, fmt.ptr, args);
   E.statusmsg_time = time(null);
 }
 
@@ -935,7 +935,7 @@ char* editorPrompt(string prompt, void function(char*, int) callback) {
   buf[0] = '\0';
 
   while (1) {
-    editorSetStatusMessage(prompt.ptr, buf);
+    editorSetStatusMessage(prompt, buf);
     editorRefreshScreen();
 
     int c = editorReadKey();
