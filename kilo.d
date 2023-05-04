@@ -630,6 +630,8 @@ void editorOpen(const(char)* filename) {
   FILE* fp = fopen(filename, "r");
   if (!fp)
     die("fopen");
+  scope (exit)
+    fclose(fp);
 
   char* line = null;
   size_t linecap = 0;
@@ -642,7 +644,6 @@ void editorOpen(const(char)* filename) {
     editorInsertRow(E.numrows, line[0 .. linelen]);
   }
   free(line);
-  fclose(fp);
   E.dirty = 0;
 }
 
@@ -760,14 +761,14 @@ struct abuf {
   int len;
 }
 
-void abAppend(abuf* ab, const(char)* s, long len) {
-  char* new_ = cast(char*) realloc(ab.b, ab.len + len);
+void abAppend(abuf* ab, const(char)[] s) {
+  char* new_ = cast(char*) realloc(ab.b, ab.len + s.length);
 
   if (new_ == null)
     return;
-  memcpy(&new_[ab.len], s, len);
+  memcpy(&new_[ab.len], s.ptr, s.length);
   ab.b = new_;
-  ab.len += len;
+  ab.len += s.length;
 }
 
 void abFree(abuf* ab) {
@@ -808,15 +809,15 @@ void editorDrawRows(abuf* ab) {
           welcomelen = E.screencols;
         int padding = (E.screencols - welcomelen) / 2;
         if (padding) {
-          abAppend(ab, "~", 1);
+          abAppend(ab, "~");
           padding--;
         }
         while (padding--)
-          abAppend(ab, " ", 1);
-        abAppend(ab, welcome.ptr, welcomelen);
+          abAppend(ab, " ");
+        abAppend(ab, welcome[0 .. welcomelen]);
       }
       else {
-        abAppend(ab, "~", 1);
+        abAppend(ab, "~");
       }
     }
     else {
@@ -831,21 +832,21 @@ void editorDrawRows(abuf* ab) {
       foreach (j; 0 .. len) {
         if (iscntrl(c[j])) {
           char sym = (c[j] <= 26) ? cast(char)('@' + c[j]) : '?';
-          abAppend(ab, "\x1b[7m", 4);
-          abAppend(ab, &sym, 1);
-          abAppend(ab, "\x1b[m", 3);
+          abAppend(ab, "\x1b[7m");
+          abAppend(ab, (&sym)[0 .. 1]);
+          abAppend(ab, "\x1b[m");
           if (current_color != -1) {
             char[16] buf;
             int clen = snprintf(buf.ptr, buf.length, "\x1b[%dm", current_color);
-            abAppend(ab, buf.ptr, clen);
+            abAppend(ab, buf[0 .. clen]);
           }
         }
         else if (hl[j] == HL_NORMAL) {
           if (current_color != -1) {
-            abAppend(ab, "\x1b[39m", 5);
+            abAppend(ab, "\x1b[39m");
             current_color = -1;
           }
-          abAppend(ab, &c[j], 1);
+          abAppend(ab, c[j .. j + 1]);
         }
         else {
           int color = editorSyntaxToColor(hl[j]);
@@ -853,21 +854,21 @@ void editorDrawRows(abuf* ab) {
             current_color = color;
             char[16] buf;
             int clen = snprintf(buf.ptr, buf.length, "\x1b[%dm", color);
-            abAppend(ab, buf.ptr, clen);
+            abAppend(ab, buf[0 .. clen]);
           }
-          abAppend(ab, &c[j], 1);
+          abAppend(ab, c[j .. j + 1]);
         }
       }
-      abAppend(ab, "\x1b[39m", 5);
+      abAppend(ab, "\x1b[39m");
     }
 
-    abAppend(ab, "\x1b[K", 3);
-    abAppend(ab, "\r\n", 2);
+    abAppend(ab, "\x1b[K");
+    abAppend(ab, "\r\n");
   }
 }
 
 void editorDrawStatusBar(abuf* ab) {
-  abAppend(ab, "\x1b[7m", 4);
+  abAppend(ab, "\x1b[7m");
   char[80] status, rstatus;
   int len = snprintf(status.ptr, status.length, "%.20s - %d lines %s",
     E.filename ? E.filename : "[No Name]", E.numrows,
@@ -876,28 +877,28 @@ void editorDrawStatusBar(abuf* ab) {
     (E.syntax ? E.syntax.filetype : "no ft").ptr, E.cy + 1, E.numrows);
   if (len > E.screencols)
     len = E.screencols;
-  abAppend(ab, status.ptr, len);
+  abAppend(ab, status[0 .. len]);
   while (len < E.screencols) {
     if (E.screencols - len == rlen) {
-      abAppend(ab, rstatus.ptr, rlen);
+      abAppend(ab, rstatus[0 .. rlen]);
       break;
     }
     else {
-      abAppend(ab, " ", 1);
+      abAppend(ab, " ");
       len++;
     }
   }
-  abAppend(ab, "\x1b[m", 3);
-  abAppend(ab, "\r\n", 2);
+  abAppend(ab, "\x1b[m");
+  abAppend(ab, "\r\n");
 }
 
 void editorDrawMessageBar(abuf* ab) {
-  abAppend(ab, "\x1b[K", 3);
+  abAppend(ab, "\x1b[K");
   size_t msglen = strlen(E.statusmsg.ptr);
   if (msglen > E.screencols)
     msglen = E.screencols;
   if (msglen && time(null) - E.statusmsg_time < 5)
-    abAppend(ab, E.statusmsg.ptr, msglen);
+    abAppend(ab, E.statusmsg[0 .. msglen]);
 }
 
 void editorRefreshScreen() {
@@ -905,19 +906,19 @@ void editorRefreshScreen() {
 
   abuf ab;
 
-  abAppend(&ab, "\x1b[?25l", 6);
-  abAppend(&ab, "\x1b[H", 3);
+  abAppend(&ab, "\x1b[?25l");
+  abAppend(&ab, "\x1b[H");
 
   editorDrawRows(&ab);
   editorDrawStatusBar(&ab);
   editorDrawMessageBar(&ab);
 
   char[32] buf;
-  snprintf(buf.ptr, buf.length, "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+  int buflen = snprintf(buf.ptr, buf.length, "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
     (E.rx - E.coloff) + 1);
-  abAppend(&ab, buf.ptr, strlen(buf.ptr));
+  abAppend(&ab, buf[0 .. buflen]);
 
-  abAppend(&ab, "\x1b[?25h", 6);
+  abAppend(&ab, "\x1b[?25h");
 
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
