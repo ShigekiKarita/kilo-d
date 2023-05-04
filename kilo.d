@@ -389,7 +389,7 @@ void editorUpdateSyntax(erow* row) {
     editorUpdateSyntax(&E.row[row.idx + 1]);
 }
 
-int editorSyntaxToColor(int hl) @safe {
+int editorSyntaxToColor(int hl) @safe pure {
   switch (hl) {
   case HL_COMMENT:
   case HL_MLCOMMENT:
@@ -437,8 +437,8 @@ void editorSelectSyntaxHighlight() {
 
 int editorRowCxToRx(erow* row, int cx) {
   int rx = 0;
-  foreach (j; 0 .. cx) {
-    if (row.chars[j] == '\t')
+  foreach (c; row.chars[0 .. cx]) {
+    if (c == '\t')
       rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
     rx++;
   }
@@ -461,22 +461,22 @@ int editorRowRxToCx(erow* row, ptrdiff_t rx) {
 
 void editorUpdateRow(erow* row) {
   int tabs = 0;
-  foreach (j; 0 .. row.size)
-    if (row.chars[j] == '\t')
+  foreach (c; row.chars[0 .. row.size])
+    if (c == '\t')
       tabs++;
 
   free(row.render);
   row.render = cast(char*) malloc(row.size + tabs * (KILO_TAB_STOP - 1) + 1);
 
   int idx = 0;
-  foreach (j; 0 .. row.size) {
-    if (row.chars[j] == '\t') {
+  foreach (c; row.chars[0 .. row.size]) {
+    if (c == '\t') {
       row.render[idx++] = ' ';
       while (idx % KILO_TAB_STOP != 0)
         row.render[idx++] = ' ';
     }
     else {
-      row.render[idx++] = row.chars[j];
+      row.render[idx++] = c;
     }
   }
   row.render[idx] = '\0';
@@ -485,7 +485,7 @@ void editorUpdateRow(erow* row) {
   editorUpdateSyntax(row);
 }
 
-void editorInsertRow(int at, const(char)* s, int len) {
+void editorInsertRow(int at, const(char)[] s) {
   if (at < 0 || at > E.numrows)
     return;
 
@@ -496,10 +496,10 @@ void editorInsertRow(int at, const(char)* s, int len) {
 
   E.row[at].idx = at;
 
-  E.row[at].size = len;
-  E.row[at].chars = cast(char*) malloc(len + 1);
-  memcpy(E.row[at].chars, s, len);
-  E.row[at].chars[len] = '\0';
+  E.row[at].size = cast(int) s.length;
+  E.row[at].chars = cast(char*) malloc(s.length + 1);
+  memcpy(E.row[at].chars, s.ptr, s.length);
+  E.row[at].chars[s.length] = '\0';
 
   E.row[at].rsize = 0;
   E.row[at].render = null;
@@ -539,10 +539,10 @@ void editorRowInsertChar(erow* row, int at, char c) {
   E.dirty++;
 }
 
-void editorRowAppendString(erow* row, char* s, size_t len) {
-  row.chars = cast(char*) realloc(row.chars, row.size + len + 1);
-  memcpy(&row.chars[row.size], s, len);
-  row.size += len;
+void editorRowAppendString(erow* row, const(char)[] s) {
+  row.chars = cast(char*) realloc(row.chars, row.size + s.length + 1);
+  memcpy(&row.chars[row.size], s.ptr, s.length);
+  row.size += s.length;
   row.chars[row.size] = '\0';
   editorUpdateRow(row);
   E.dirty++;
@@ -561,7 +561,7 @@ void editorRowDelChar(erow* row, int at) {
 
 void editorInsertChar(char c) {
   if (E.cy == E.numrows) {
-    editorInsertRow(E.numrows, "", 0);
+    editorInsertRow(E.numrows, "");
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
@@ -569,11 +569,11 @@ void editorInsertChar(char c) {
 
 void editorInsertNewline() {
   if (E.cx == 0) {
-    editorInsertRow(E.cy, "", 0);
+    editorInsertRow(E.cy, "");
   }
   else {
     erow* row = &E.row[E.cy];
-    editorInsertRow(E.cy + 1, &row.chars[E.cx], row.size - E.cx);
+    editorInsertRow(E.cy + 1, row.chars[E.cx .. row.size]);
     row = &E.row[E.cy];
     row.size = E.cx;
     row.chars[row.size] = '\0';
@@ -596,7 +596,7 @@ void editorDelChar() {
   }
   else {
     E.cx = E.row[E.cy - 1].size;
-    editorRowAppendString(&E.row[E.cy - 1], row.chars, row.size);
+    editorRowAppendString(&E.row[E.cy - 1], row.chars[0 .. row.size]);
     editorDelRow(E.cy);
     E.cy--;
   }
@@ -604,11 +604,10 @@ void editorDelChar() {
 
 /*** file i/o ***/
 
-char* editorRowsToString(int* buflen) {
+char[] editorRowsToString() {
   int totlen = 0;
   foreach (j; 0 .. E.numrows)
     totlen += E.row[j].size + 1;
-  *buflen = totlen;
 
   char* buf = cast(char*) malloc(totlen);
   char* p = buf;
@@ -619,7 +618,7 @@ char* editorRowsToString(int* buflen) {
     p++;
   }
 
-  return buf;
+  return buf[0 .. totlen];
 }
 
 void editorOpen(const(char)* filename) {
@@ -640,8 +639,7 @@ void editorOpen(const(char)* filename) {
         line[linelen - 1] == '\r'))
       linelen--;
     // TODO: fix this cast.
-    assert(int.min <= linelen && linelen <= int.max);
-    editorInsertRow(E.numrows, cast(const(char)*) line, cast(int) linelen);
+    editorInsertRow(E.numrows, line[0 .. linelen]);
   }
   free(line);
   fclose(fp);
@@ -658,20 +656,19 @@ void editorSave() {
     editorSelectSyntaxHighlight();
   }
 
-  int len;
-  char* buf = editorRowsToString(&len);
+  char[] buf = editorRowsToString();
   scope (exit)
-    free(buf);
+    free(buf.ptr);
 
   int fd = open(E.filename, O_RDWR | O_CREAT, octal!644);
   scope (exit)
     close(fd);
 
   if (fd != -1 &&
-    ftruncate(fd, len) != -1 &&
-    write(fd, buf, len) == len) {
+    ftruncate(fd, buf.length) != -1 &&
+    write(fd, buf.ptr, buf.length) == buf.length) {
     E.dirty = 0;
-    editorSetStatusMessage("%d bytes written to disk", len);
+    editorSetStatusMessage("%d bytes written to disk", buf.length);
     return;
   }
 
